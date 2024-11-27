@@ -1,0 +1,606 @@
+---
+title: "Type M Error Thesis Code"
+output: html_document
+date: '2022-06-06'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(fig.width=18, fig.height=15)
+
+library(ggplot2)
+library(pwr)
+library(MASS)
+library(mueRelativeRisk)
+library(extrafont)
+library(retrodesign)
+library(faux)
+library(knitr)
+library(kableExtra)
+library(ggprism)
+library(htmlwidgets)
+```
+
+```{r Cohen's d Without Publcation Bias -- Simulation}
+Ns_nb <- c(10, 20, 30, 50, 100, 200)
+meanM_nb <- rep(0,4)
+x_nb <- c(0.1, 0.2, 0.5, 0.8)
+allM_nb <- data.frame(matrix(0, nrow = length(Ns_nb), ncol = length(meanM_nb)))
+
+num_nb <- 150000
+
+for(k in 1:nrow(allM_nb)){
+  for (j in 1:length(meanM_nb)){
+    d_stats_nb <- rep(NA, num_nb)
+    for (i in 1:num_nb){
+      X_nb <- rnorm(Ns_nb[k],x_nb[j],1)
+      Y_nb <- rnorm(Ns_nb[k],0,1)
+  
+      ttest_nb <- t.test(X_nb, Y_nb, var.equal = T)
+      pval_nb <- ttest_nb$p.value
+      ttest_nb <- as.numeric(ttest_nb$estimate)
+      d_nb <- ttest_nb[1] - ttest_nb[2]
+      
+      d_stats_nb[i] <- d_nb
+    }
+    meanM_nb[j] <- mean(d_stats_nb, na.rm = T)/(x_nb[j])
+  }
+  allM_nb[k,1:length(meanM_nb)] <- meanM_nb
+}
+
+allM_nb
+```
+
+```{r Cohen's d Without Publication Bias -- Graph}
+allData_new <- allM_nb[1:6,]
+x_M <- c(0.1, 0.2, 0.5, 0.8)
+
+x_title <- expression(paste("Population-level Cohen's ", italic("d")))
+
+tdata_new <- data.frame(t(allData_new))
+colnames(tdata_new) <- c("one", "two", "three", "four", "five", "six")
+tdata_new$x_scale <- c("0.1", "0.2", "0.5", "0.8")
+
+custom_breaks_x <- c(0.1, 0.2, 0.5, 0.8)
+custom_breaks_y <- c(1, 1.5)
+
+ggplot(data = tdata_new, aes(x = as.numeric(x_scale), group = 1)) + 
+  geom_line(aes(y = one,   color = 'n = 10'),  lwd = 1.5) + 
+  geom_line(aes(y = two,   color = 'n = 20'),  lwd = 1.5) + 
+  geom_line(aes(y = three, color = 'n = 30'),  lwd = 1.5) + 
+  geom_line(aes(y = four,  color = 'n = 50'),  lwd = 1.5) + 
+  geom_line(aes(y = five,  color = 'n = 100'), lwd = 1.5) + 
+  geom_line(aes(y = six,   color = 'n = 200'), lwd = 1.5) +
+  geom_line(aes(y = 1), linetype= "dashed", color = 'red', lwd = 1.0) +
+  scale_color_manual(values = c("#00798c", "#d1495b", "#edae49", "#66a182", "#2e4057", "black"), 
+                     breaks = c('n = 10' , 'n = 20' , 'n = 30' , 'n = 50', 'n = 100', 'n = 200')) +
+  geom_point(y = tdata_new$one,   size = 2.5, color="#00798c") +
+  geom_point(y = tdata_new$two,   size = 2.5, color="#d1495b") +
+  geom_point(y = tdata_new$three, size = 2.5, color="#edae49") +
+  geom_point(y = tdata_new$four,  size = 2.5, color="#66a182") +
+  geom_point(y = tdata_new$five,  size = 2.5, color="#2e4057") +
+  geom_point(y = tdata_new$six,   size = 2.5, color="black"  ) +
+  theme_bw() + 
+  theme(panel.border         = element_blank(),         
+        panel.grid.major     = element_blank(),
+        panel.grid.minor     = element_blank(), 
+        axis.line            = element_line(colour = "black"),
+        axis.text            = element_text(size=10),
+        axis.title           = element_text(size=10),
+        #legend.position      = c(.75, 0.75),
+        legend.justification = c("left", "top")) +
+  labs(colour="Sample Size") + 
+  scale_x_continuous(breaks = custom_breaks_x, 
+                     labels = c("d = 0.1", "d = 0.2", "d = 0.5", "d = 0.8")) +
+  scale_y_continuous(guide        = "prism_minor",
+                     limits       = c(0.9, 1.5),
+                     breaks       = custom_breaks_y, 
+                     labels       = c("1", "1.5")) +
+  xlab(x_title) +
+  ylab("Average Exaggeration") +
+  theme(axis.title.x = element_text(margin = margin(t = 10))) +
+  theme(axis.title.y = element_text(margin = margin(r = 10)))
+
+#ggsave("nopublicationbias.png")
+```
+
+
+```{r Cohen's d With Publcation Bias -- Simulation}
+Ns_d <- c(10, 20, 30, 50, 100, 200)
+meanM_d <- rep(0,4)
+x_d <- c(0.1, 0.2, 0.5, 0.8)
+allM_d <- data.frame(matrix(0, nrow = length(Ns_d), ncol = length(meanM_d)))
+
+num_t <- 150000
+
+for(k in 1:nrow(allM_d)){
+  for (j in 1:length(meanM_d)){
+    d_stats <- rep(NA, num_t)
+    for (i in 1:num_t){
+      X_d <- rnorm(Ns_d[k],x_d[j],1)
+      Y_d <- rnorm(Ns_d[k],0,1)
+  
+      ttest_d <- t.test(X_d, Y_d, var.equal = T)
+      pval_d <- ttest_d$p.value
+      ttest_d <- as.numeric(ttest_d$estimate)
+      d <- ttest_d[1] - ttest_d[2]
+      
+      if(d < 0){
+        next
+      }
+      if(pval_d <= 0.05){
+        d_stats[i] <- d
+      }
+    }
+    meanM_d[j] <- mean(abs(d_stats), na.rm = T)/(x_d[j])
+  }
+  allM_d[k,1:length(meanM_d)] <- meanM_d
+}
+
+allM_d
+```
+
+```{r Cohen's d With Publication Bias -- Graph}
+allData_new <- allM_d[1:6,]
+x_M <- c(0.1, 0.2, 0.5, 0.8)
+
+x_title <- expression(paste("Population-level Cohen's ", italic("d")))
+
+tdata_new <- data.frame(t(allData_new))
+colnames(tdata_new) <- c("one", "two", "three", "four", "five", "six")
+tdata_new$x_scale <- c("0.1", "0.2", "0.5", "0.8")
+
+custom_breaks_x <- c(0.1, 0.2, 0.5, 0.8)
+custom_breaks_y <- c(1, 2.5, 5.0, 7.5, 10.0)
+
+ggplot(data = tdata_new, aes(x = as.numeric(x_scale), group = 1)) + 
+  geom_line(aes(y = one,   color = 'n = 10'),  lwd = 1.5) + 
+  geom_line(aes(y = two,   color = 'n = 20'),  lwd = 1.5) + 
+  geom_line(aes(y = three, color = 'n = 30'),  lwd = 1.5) + 
+  geom_line(aes(y = four,  color = 'n = 50'),  lwd = 1.5) + 
+  geom_line(aes(y = five,  color = 'n = 100'), lwd = 1.5) + 
+  geom_line(aes(y = six,   color = 'n = 200'), lwd = 1.5) +
+  scale_color_manual(values = c("#00798c", "#d1495b", "#edae49", "#66a182", "#2e4057", "black"), 
+                     breaks = c('n = 10' , 'n = 20' , 'n = 30' , 'n = 50', 'n = 100', 'n = 200')) +
+  geom_point(y = tdata_new$one,   size = 2.5, color="#00798c") +
+  geom_point(y = tdata_new$two,   size = 2.5, color="#d1495b") +
+  geom_point(y = tdata_new$three, size = 2.5, color="#edae49") +
+  geom_point(y = tdata_new$four,  size = 2.5, color="#66a182") +
+  geom_point(y = tdata_new$five,  size = 2.5, color="#2e4057") +
+  geom_point(y = tdata_new$six,   size = 2.5, color="black"  ) +
+  geom_line(aes(y = 1), linetype= "dashed", color = 'red', lwd = 1.0) +
+  theme_bw() + 
+  theme(panel.border         = element_blank(),         
+        panel.grid.major     = element_blank(),
+        panel.grid.minor     = element_blank(), 
+        axis.line            = element_line(colour = "black"),
+        axis.text            = element_text(size=10),
+        axis.title           = element_text(size=10),
+        legend.position      = c(.75, 1),
+        legend.justification = c("left", "top")) +
+  labs(colour="Sample Size") + 
+  scale_x_continuous(breaks = custom_breaks_x, 
+                     labels = c("d = 0.1", "d = 0.2", "d = 0.5", "d = 0.8")) +
+  scale_y_continuous(guide        = "prism_minor",
+                     limits       = c(0.998, 10.2),
+                     minor_breaks = seq(0, 10.0, 0.5),
+                     breaks       = custom_breaks_y, 
+                     labels       = c("1", "2.5", "5.0", "7.5", "10.0")) +
+  xlab(x_title) +
+  ylab("Average Type M Error") +
+  theme(axis.title.x = element_text(margin = margin(t = 10))) +
+  theme(axis.title.y = element_text(margin = margin(r = 10)))
+
+#ggsave("yespublicationbias.png")
+```
+
+```{r Power Analysis}
+#pwr.2p.test(n=30,sig.level=0.05,power=.90)
+#N <- c(30, 55, 80, 130, 225)
+N <- c(200, 100, 50, 30, 20)
+RR <- rep(0,length(N))
+
+for (i in 1:length(N)){
+  RR[i] <- (pwr.2p.test(n=N[i],sig.level=0.05,power=.2)$h)/.1
+}
+RR
+```
+
+```{r False Positive Psychology -- Recreation 1}
+ns <- c(10,20)
+
+nums <- c(1, 5, 10, 20)
+
+all_means <- matrix(0,nrow=2,ncol=4)
+
+sample_counter <- 1
+
+for (l in 1:nrow(all_means)){
+  for (k in 1:ncol(all_means)){
+      false_positives <- rep(0,250000)
+      for (f in 1:length(false_positives)){
+        n <- ns[sample_counter]
+        
+        X <- rnorm(ns[sample_counter],0,1)
+        Y <- rnorm(ns[sample_counter],0,1)
+        
+        pval <- t.test(X, Y, var.equal = T)$p.value
+    
+        if (pval < 0.05){
+          false_positives[f] <- 1
+          next
+        } else{
+        while (n <= 50){
+          X <- c(X,rnorm(nums[k],0,1))
+          Y <- c(Y,rnorm(nums[k],0,1))
+          
+          pval <- t.test(X, Y, var.equal = T)$p.value
+    
+          if (pval < 0.05){
+            false_positives[f] <- 1
+            break
+          } else{
+            n <- length(X) + nums[k]
+          }
+        }
+      }
+    }
+      all_means[l,k] <- mean(false_positives)*100
+  }
+  sample_counter <- sample_counter + 1
+}
+
+all_means
+```
+
+```{r fig.width=7, fig.height=5, False Positive Psychology -- Recreation 1 Graph}
+set <- data.frame(t(all_means))
+x <- c(1, 5, 10, 20)
+colnames(set) <- c("one", "two")
+set$x_scale <- as.factor(x)
+ggplot(data=set, aes(x = x_scale, group=1)) + 
+  geom_line(aes(y = one, color = 'n ≥ 10'), lwd = 1.5) + 
+  geom_line(aes(y = two, color = 'n ≥ 20'), lwd = 1.5) + 
+  geom_line(aes(y = 5), linetype = "dashed", color='red') +
+  geom_point(y = set$one, size = 2.5, color = "#d1495b") +
+  geom_point(y = set$two, size = 2.5, color = "#00798c") + 
+  scale_color_manual(values=c("#d1495b", "#00798c")) +
+  scale_y_continuous(limits = c(0, 25)) + 
+  scale_x_discrete(limits = c("1", "5", "10", "20"), 
+                   expand = c(0.1, 0)) +
+  theme_bw() + 
+  theme(panel.border     = element_blank(),         
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(), 
+        axis.line        = element_line(colour = "black"),
+        axis.text        = element_text(size = 14),
+        axis.title       = element_text(size = 14)) +
+  xlab("Number of Additional Per Condition
+    Observations Before Performing Another t Test") +
+  ylab("Percentage of False-Positive Results") +
+  labs(colour="Minimum Sample Size") +
+  annotate(geom = "text", x = 1.2, y = 23.0, label = "22.1%", color = "black", size = 5) +
+  annotate(geom = "text", x = 2.2, y = 18.0, label = "16.9%", color = "black", size = 5) +
+  annotate(geom = "text", x = 3.2, y = 15.0, label = "14.3%", color = "black", size = 5) +
+  annotate(geom = "text", x = 4.0, y = 13.0, label = "11.6%", color = "black", size = 5) +
+  
+  annotate(geom = "text", x = 1.2, y = 17.5, label = "16.3%", color = "black", size = 5) +
+  annotate(geom = "text", x = 2.2, y = 14.0, label = "13.2%", color = "black", size = 5) +
+  annotate(geom = "text", x = 3.2, y = 12.2, label = "12.4%", color = "black", size = 5) +
+  annotate(geom = "text", x = 4.0, y = 10.0, label = "10.8%", color = "black", size = 5) +
+  theme(legend.position = c(.75, 1),
+        legend.justification = c("left", "top"))
+
+#ggsave("typeonetypetwo.png")
+```
+
+```{r Power Analysis}
+power_n <- c(10, 20, 40, 60)
+power_e <- c(0.1, 0.2, 0.5, 0.8)
+
+power_df <- matrix(0,nrow=4,ncol=4)
+
+for (i in 1:nrow(power_df)){
+  for (j in 1:ncol(power_df))
+    power_df[i,j] <- round(power.t.test(n = power_n[i], delta = power_e[j], sd = 1, strict = T)$power*100,2)
+}
+
+power_df <- cbind(c("n ≥ 10", "n ≥ 20", "n ≥ 40", "n ≥ 60"), power_df)
+```
+
+```{r Power Analysis Table}
+#POWER
+kable(power_df, booktabs = TRUE,
+      col.names = c("Sample Size", "0.1", "0.2", "0.5", "0.8"), align = "lcccc") %>%
+      add_header_above(c(" " = 1, "Effect Size" = 4)) %>%
+      kable_styling(bootstrap_options = "striped", full_width = F) #%>%
+      #save_kable("estimated_power.png", zoom = 3)
+```
+
+
+```{r False Positive Psychology -- Situation A Original}
+### ORIGINAL ###
+reps <- 250000
+pvals_A <- rep(0,reps)
+
+### A ###
+trt <- rep(c('a', 'b'), each = 20)
+
+for (i in 1:reps){
+  multi_1 <- rnorm_multi(n = 20, mu = c(0, 0), sd = 1, r = 0.5)
+  multi_2 <- rnorm_multi(n = 20, mu = c(0, 0), sd = 1, r = 0.5)
+    
+  df_A <- rbind(multi_1,multi_2)
+    
+  p1 <- t.test(df_A$X1~trt, mu = 0)$p.value
+  p2 <- t.test(df_A$X2~trt, mu = 0)$p.value
+  p3 <- t.test(((df_A$X1 + df_A$X2)/2)~trt, mu = 0)$p.value
+  
+  pvals_A[i] <- min(p1,p2,p3)
+}
+
+original_A <- sum(pvals_A<0.05)/reps
+```
+
+```{r False Positive Psychology -- Situation A Type M}
+### TYPE M ###
+reps <- 250000
+all_TypeM_A <- matrix(0,nrow=1,ncol=4)
+diff_A <- c(0.1, 0.2, 0.5, 0.8)
+
+### A ###
+trt <- rep(c('a', 'b'), each = 20)
+
+for(j in 1:ncol(all_TypeM_A)){
+  d_stat_A <- rep(NA,reps)
+  for (i in 1:reps){
+    multi_1 <- rnorm_multi(n = 20, mu = c(diff_A[j], diff_A[j]), sd = 1, r = 0.5)
+    multi_2 <- rnorm_multi(n = 20, mu = c(0, 0), sd = 1, r = 0.5)
+    
+    df_A <- rbind(multi_1,multi_2)
+    
+    p1 <- t.test(df_A$X1~trt, mu = 0)
+    p2 <- t.test(df_A$X2~trt, mu = 0)
+    p3 <- t.test(((df_A$X1 + df_A$X2)/2)~trt, mu = 0)
+  
+    min <- which.min(c(p1$p.value,p2$p.value,p3$p.value))
+    d_tests <- c(list(p1$estimate),list(p2$estimate),list(p3$estimate))
+  
+    if(min(c(p1$p.value,p2$p.value,p3$p.value)) <= 0.05){
+      d_stat_A[i] <- abs(d_tests[[min]][1] - d_tests[[min]][2])
+    }
+  }
+  all_TypeM_A[j] <- mean(d_stat_A, na.rm = T)/diff_A[j]
+}
+```
+
+
+```{r False Positive Psychology -- Situation B Original}
+### ORIGINAL ###
+reps <- 250000
+pvals_B <- rep(0,reps)
+
+### B ###
+for (i in 1:reps){
+  X <- rnorm(20,0,1)
+  Y <- rnorm(20,0,1)
+  pval_B <- t.test(X, Y, var.equal = T)$p.value
+  
+  if(pval_B <= 0.05){
+    pvals_B[i] <- pval_B
+  }
+  else{
+    X <- c(X,rnorm(10,0,1))
+    Y <- c(Y,rnorm(10,0,1))
+    pvals_B[i] <- t.test(X, Y, var.equal = T)$p.value
+  }
+}
+
+original_B <- sum(pvals_B<0.05)/reps
+```
+
+```{r False Positive Psychology -- Situation B Type M}
+### TYPE M ###
+reps <- 250000
+all_TypeM_B <- matrix(0,nrow=1,ncol=4)
+diff_B <- c(0.1, 0.2, 0.5, 0.8)
+
+### B ###
+for (j in 1:ncol(all_TypeM_B)){
+  d_stat_B <- rep(NA,reps)
+  for (i in 1:reps){
+    X <- rnorm(20,diff_B[j],1)
+    Y <- rnorm(20,0,1)
+  
+    test_B <- t.test(X, Y, var.equal = T)
+    pval_B <- test_B$p.value
+    d <- as.numeric(t.test(X, Y, var.equal = T)$estimate)
+  
+    if(pval_B <= 0.05){
+      d_stat_B[i] <- abs(d[1] - d[2])
+    }
+    else{
+      X <- c(X,rnorm(10,diff_B[j],1))
+      Y <- c(Y,rnorm(10,0,1))
+    
+      test_B <- t.test(X, Y, var.equal = T)
+      pval_B <- test_B$p.value
+      d <- as.numeric(t.test(X, Y, var.equal = T)$estimate)
+    
+      if(pval_B <= 0.5){
+        d_stat_B[i] <- abs(d[1] - d[2])
+      }
+    }
+  }
+  all_TypeM_B[j] <- mean(d_stat_B, na.rm = T)/diff_B[j]
+}
+```
+
+```{r False Positive Psychology -- Situation C Original}
+### ORIGINAL ###
+reps <- 250000
+pvals_C <- rep(0,reps)
+
+### C ###
+for(i in 1:reps){
+  data = data.frame(c(rnorm(20,0.1,1), rnorm(20,0,1)), as.factor(rep(c(0,1), each = 20)), rbinom(n = 40,size = 1, prob = 0.50))
+  names(data) = c("Y", "trt", "MF")
+  
+  if(is.na(lm(Y ~ MF*trt, data = data)$coefficients[4])){
+    next
+  }
+  
+  p_val <- t.test(Y ~ trt, var.equal = T, data = data)$p.value
+  
+  p_int <- summary(aov(lm(Y ~ MF*trt, data = data)))[[1]][["Pr(>F)"]][2:3]
+  pvals_C[i] <- min(c(p_int, p_val), na.rm = T)
+}
+
+original_C <- sum(pvals_C<0.05)/reps
+```
+
+```{r False Positive Psychology -- Situation C Type M}
+### TYPE M ###
+reps <- 250000
+all_TypeM_C <- matrix(0,nrow=1,ncol=4)
+diff_C <- c(0.1, 0.2, 0.5, 0.8)
+
+### C ###
+for (j in 1:ncol(all_TypeM_C)){
+  d_stats_C <- rep(NA,reps)
+  for (i in 1:reps){
+    data = data.frame(c(rnorm(20,diff_C[j],1), rnorm(20,0,1)), as.factor(rep(c(0,1), each = 20)), rbinom(n = 40,size = 1, prob = 0.50))
+    names(data) = c("Y", "trt", "MF")
+    
+    ttest_C <- t.test(Y ~ trt, var.equal = T, data = data)
+    pval_C <- ttest_C$p.value
+    d_stat_C <- as.numeric(ttest_C$estimate)
+    d <- d_stat_C[1] - d_stat_C[2]
+    
+    if(is.na(lm(Y ~ MF*trt, data = data)$coefficients[4])){
+      next
+    }
+    
+    summ_C <- summary(lm(Y ~ MF*trt, data = data))$coefficients
+    aov_pvals_trt1 <- summ_C[3,4]
+    aov_pvals_int <- summ_C[4,4]
+    
+    pvals_C <- c(pval_C, aov_pvals_trt1, aov_pvals_int)
+
+    if(min(pvals_C) <= 0.05){
+      pvals_min <- which.min(pvals_C)
+      if(pvals_min == 1){
+        d_stats_C[i] <- abs(d)
+      }
+      else if(pvals_min == 2){
+        d_stats_C[i] <- abs(summ_C[3,1])
+      }
+      else if(pvals_min == 3){
+        d_stats_C[i] <- abs(summ_C[4,1])
+      }
+    }
+  }
+  all_TypeM_C[j] <- mean(d_stats_C, na.rm = T)/diff_C[j]
+}
+```
+
+
+```{r False Positive Psychology -- Situation D Original}
+### ORIGINAL ###
+reps <- 250000
+pvals_D <- rep(0,reps)
+
+### D ###
+X <- rep(c(-1, 0, 1), each = 20)
+
+for(i in 1:reps){
+  Y <- rnorm_multi(n = 20, mu = c(0,0,0), sd = 1)
+  df <- data.frame(X, c(Y$X1, Y$X2, Y$X3))
+  
+  p1 <- t.test(Y$X1, Y$X2, var.equal = T)$p.value
+  p2 <- t.test(Y$X2, Y$X3, var.equal = T)$p.value
+  p3 <- t.test(Y$X3, Y$X1, var.equal = T)$p.value
+  
+  model <- lm(df$c.Y.X1..Y.X2..Y.X3. ~ X, data = df)
+  p4 <- summary(model)$coefficients[2,4]
+  
+  pvals_D[i] <- min(p1,p2,p3,p4)
+}
+
+original_D <- sum(pvals_D<0.05)/reps
+```
+
+```{r False Positive Psychology -- Situation D Type M}
+### TYPE M ###
+reps <- 250000
+d_stat_D <- rep(NA,reps)
+all_TypeM_D <- matrix(0,nrow=1,ncol=4)
+diff_D <- c(0.1, 0.2, 0.5, 0.8)
+
+### D ###
+X <- rep(c(-0.5, 0.5), each = 20)
+
+for (j in 1:ncol(all_TypeM_D)){
+  d_stat_D <- rep(NA,reps)
+  for(i in 1:reps){
+    Y <- rnorm_multi(n = 20, mu = c(0.0, diff_D[j]), sd = 1)
+    df <- data.frame(X, c(Y$X1, Y$X2, Y$X3))
+    
+    test <- t.test(Y$X1, Y$X3, var.equal = T)
+    pval_ttest <- test$p.value
+    d_stat <- as.numeric(t.test(X, Y, var.equal = T)$estimate)
+    d <- abs(d_stat[1] - d_stat[2])
+    
+    model <- lm(df$c.Y.X1..Y.X2..Y.X3. ~ X, data = df)
+    sum_D <- summary(model)$coefficients
+    pval_model <- abs(sum_D[2,4])
+    d_stat_model <- abs(sum_D[2,1])
+    
+    if((pval_ttest <= pval_model) && (pval_ttest <= 0.05)){
+      d_stat_D[i] <- d
+    }
+    
+    if((pval_model <= pval_ttest ) && (pval_model <= 0.05)){
+      d_stat_D[i] <- d_stat_model
+    }
+  }
+  all_TypeM_D[j] <- mean(d_stat_D, na.rm = T)/diff_D[j]
+}
+```
+
+```{r False Positive Psychology -- Original Table Recreation}
+all_Original_df <- t(data.frame(
+           'a' = c("Situation A: two dependent variables (r = .50)", 
+                   paste(round(original_A*100,2), "%", sep="")),
+           'b' = c("Situation B: addition of 10 more observations per cell", 
+                   paste(round(original_B*100,2), "%", sep="")),
+           'c' = c("Situation C: controlling for gender or interaction of gender with treatment", 
+                   paste(round(original_C*100,2), "%", sep="")),
+           'd' = c("Situation D: dropping (or not dropping) one of three conditions", 
+                   paste(round(original_D*100,2), "%", sep=""))))
+
+rownames(all_Original_df) <- NULL
+
+
+all_Original_Table <- kable(all_Original_df, col.names = c("Researcher degrees of freedom", 'p < 0.05'), 
+                            escape = FALSE, align = "lc") %>%
+  kable_styling(bootstrap_options = "striped", full_width = F) %>%
+  add_header_above(c(" " = 1, "Significance level" = 1))
+
+all_Original_Table
+```
+
+```{r False Positive Psychology -- Type M Table Recreation}
+all_TypeM <- rbind(c("Situation A: two dependent variables (r = .50)", round(all_TypeM_A,2)), 
+                   c("Situation B: addition of 10 more observations per cell", round(all_TypeM_B,2)),
+                   c("Situation C: controlling for gender or interaction of gender with treatment", round(all_TypeM_C,2)),
+                   c("Situation D: dropping (or not dropping) one of three conditions", round(all_TypeM_D,2)))
+
+all_TypeM_Table <- kable(all_TypeM, booktabs = TRUE, 
+                         col.names = c("Researcher degrees of freedom", "0.1", "0.2", "0.5", "0.8"), align = "lccc") %>%
+                         kable_styling(bootstrap_options = c("striped"), full_width = F) %>%
+                         add_header_above(c(" " = 2, "Effect Size" = 2, " " = 1))
+  
+  
+all_TypeM_Table
+```
